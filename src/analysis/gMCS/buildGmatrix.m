@@ -37,6 +37,9 @@ function [G, G_ind, related, n_genes_KO, G_time] = buildGmatrix(model_name, mode
 %       - Luis V. Valcarcel, 19/11/2017, University of Navarra, TECNUN School of Engineering.
 %       - Francisco J. Planes, 20/11/2017, University of Navarra, TECNUN School of Engineering.
 %       - Inigo Apaolaza, 10/04/2018, University of Navarra, TECNUN School of Engineering.
+%       - Luis V. Valcarcel, 01/12/2021, University of Navarra, TECNUN School of Engineering.
+%       - Naroa Barrena, 01/12/2021, University of Navarra, TECNUN School of Engineering.
+
 
 time_a = tic;
 % Generate name for temporary folder
@@ -61,6 +64,13 @@ grRules = model.grRules;
 rxnGeneMat = model.rxnGeneMat;
 n_rxns = size(rxnGeneMat, 1);
 
+% Note: it is possible to make the grRules unique, in order to make the
+% code faster.
+[grRules,I2unuque,I2duplicated] = unique(grRules);
+rxnGeneMat = rxnGeneMat(I2unuque,:);
+n_rxns = size(rxnGeneMat, 1);
+
+% Separate into groups
 rxns_0_genes = sum(rxnGeneMat, 2) == 0;
 rxns_1_gene = sum(rxnGeneMat, 2) == 1;
 rxns_or = cellfun(@strfind, grRules, repmat({'or'}, n_rxns, 1), 'UniformOutput', false);
@@ -98,9 +108,9 @@ not_delete_cols = sum(act_rxnGeneMat, 1) ~= 0;
 act_rxnGeneMat = act_rxnGeneMat(:, not_delete_cols);
 G_ind_1 = model.genes(not_delete_cols);
 n_KO_1 = length(G_ind_1);
-tmp_G_1 = act_rxnGeneMat';
-G_1 = zeros(n_KO_1, n_rxns);
-G_1(:, rxns_1_gene) = tmp_G_1;
+% tmp_G_1 = act_rxnGeneMat';
+G_1 = spalloc(n_KO_1, n_rxns, sum(sum(act_rxnGeneMat)));
+G_1(:, rxns_1_gene) = act_rxnGeneMat';
 G_time(1, 1) = toc(time_b);
 
 % Step2 - Reactions with more than one gene and only OR rules
@@ -110,13 +120,15 @@ if printLevel >=1
 end
 time_c = tic;
 act_rxnGeneMat = rxnGeneMat(rxns_only_or, :);
-pos_rxns_only_or = find(rxns_only_or);
+% pos_rxns_only_or = find(rxns_only_or);
+G_ind_2 = cell(n_rxns_only_or,1);
 for i = 1:n_rxns_only_or
-    G_ind_2{i, 1} = model.genes(logical(act_rxnGeneMat(i, :)))';
+    G_ind_2{i} = reshape(model.genes(logical(act_rxnGeneMat(i, :))),1,[]);
 end
-tmp_G_2 = eye(n_rxns_only_or);
-G_2 = zeros(n_rxns_only_or, n_rxns);
-G_2(:, rxns_only_or) = tmp_G_2;
+% tmp_G_2 = eye(n_rxns_only_or);
+G_2 = spalloc(n_rxns_only_or, n_rxns, n_rxns_only_or);
+% G_2(:, rxns_only_or) = tmp_G_2;
+G_2(:, rxns_only_or) = eye(n_rxns_only_or);
 G_time(2, 1) = toc(time_c);
 
 % Reactions with more than one gene and only AND rules
@@ -130,24 +142,29 @@ not_delete_cols = sum(act_rxnGeneMat, 1) ~= 0;
 act_rxnGeneMat = act_rxnGeneMat(:, not_delete_cols);
 G_ind_3 = model.genes(not_delete_cols);
 n_KO_3 = length(G_ind_3);
-tmp_G_3 = act_rxnGeneMat';
-G_3 = zeros(n_KO_3, n_rxns);
-G_3(:, rxns_only_and) = tmp_G_3;
+% tmp_G_3 = act_rxnGeneMat';
+G_3 = spalloc(n_KO_3, n_rxns, sum(sum(act_rxnGeneMat)));
+% G_3(:, rxns_only_and) = tmp_G_3;
+G_3(:, rxns_only_and) = act_rxnGeneMat';
 G_time(3, 1) = toc(time_d);
 
 % Reactions with more than one gene and both OR and AND rules
 time_e = tic;
+
 search_filename = [tmpFolderName filesep 'rxn_level_models' filesep 'rxn_level_' model_name '_and_or.mat'];
-if exist(search_filename,'file')
+if exist(search_filename, 'file')
     load(search_filename);
 else
-    pos_rxns_or_and = find(rxns_or_and);
+    %     pos_rxns_or_and = find(rxns_or_and);
+    %     [models_or_and, rxnNumGenes_or_and] = GPR2models(model, pos_rxns_or_and, separate_isoform, numWorkers, printLevel);
+    % Change to take into account model has been reduced
+    pos_rxns_or_and = I2unuque(find(rxns_or_and));
     [models_or_and, rxnNumGenes_or_and] = GPR2models(model, pos_rxns_or_and, separate_isoform, numWorkers, printLevel);
     save(search_filename, 'models_or_and', 'rxnNumGenes_or_and');
 end
 
 search_filename_2 = [tmpFolderName filesep 'rxn_level_gMCSs' filesep 'rxn_level_gMCSs_' model_name '.mat'];
-if exist(search_filename_2,'file')
+if exist(search_filename_2, 'file')
     load(search_filename_2);
 else
     target_b = 1e-3;
@@ -158,118 +175,111 @@ else
         disp('G MATRIX - STEP 4');
         showprogress(0);
     end
+    mcs = cell(n_rxns_or_and,1);
+    mcs_time = cell(n_rxns_or_and,1);
     for i = 1:n_rxns_or_and
         if printLevel >=1
-%             disp([num2str(i),' of ', num2str(n_rxns_or_and)]);
+            %             disp([num2str(i),' of ', num2str(n_rxns_or_and)]);
             showprogress(i/n_rxns_or_and);
         end
         search_filename_3 = [tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat'];
         if exist(search_filename_3,'file')
-            load(search_filename_3);
+            load(search_filename_3, 'act_mcs', 'act_mcs_time');
             mcs{i, 1} = act_mcs;
+            mcs_time{i,1} = act_mcs_time;
         else
             act_model = models_or_and{i};
-            nbio = find(act_model.c);
+            % nbio = find(act_model.c);
             rxns = act_model.rxns;
             tmp = repmat({'DM_'}, length(rxns), 1);
             DM = cellfun(@strfind, rxns, tmp, 'UniformOutput', false);
             DM = ~cellfun(@isempty, DM);
-            n_DM = sum(DM);
+            %  n_DM = sum(DM);
             DM = rxns(find(DM));
-%             options.rxn_set = DM;
-% %             options.timelimit = timelimit;
-%             options.target_b = target_b;
-%             options.printLevel = 0;
+            %             options.rxn_set = DM;
+            % %             options.timelimit = timelimit;
+            %             options.target_b = target_b;
+            %             options.printLevel = 0;
             max_len_mcs = length(DM);
             [act_mcs, act_mcs_time] = calculateMCS(act_model, n_mcs, max_len_mcs,...
                 'rxn_set', DM,...
-                'timelimit', timelimit,... 
+                'timelimit', timelimit,...
                 'target_b', target_b,...
+                'forceLength', 1,...
                 'printLevel', 0);
             mcs{i, 1} = act_mcs;
             mcs_time{i, 1} = act_mcs_time;
             save(search_filename_3, 'act_mcs', 'act_mcs_time');
         end
     end
-    save(search_filename_2);
+    save(search_filename_2, 'mcs', 'mcs_time');
 end
 
-k = 0;
-for i = 1:n_rxns_or_and
-    load([tmpFolderName filesep 'rxn_level_gMCSs_by_rxn' filesep 'rxn_level_gMCSs_' model_name '_rxn' num2str(pos_rxns_or_and(i)) '.mat']);
-    n_act_mcs = length(act_mcs);
 
-    for j = 1:n_act_mcs
-        act_G_ind = act_mcs{j};
-        if ~iscell(act_G_ind) && isnan(act_G_ind)
-        else
-            act_G_ind = cellfun(@strrep, act_G_ind, repmat({'DM_'}, length(act_G_ind), 1), repmat({''}, length(act_G_ind), 1), 'UniformOutput', false);
-            act_G_ind = cellfun(@strtok, act_G_ind, repmat({separate_isoform}, length(act_G_ind), 1), 'UniformOutput', false);
-            k = k+1;
-            G_4(k, :) = zeros(1, n_rxns);
-            G_4(k, pos_rxns_or_and(i)) = 1;
-            G_ind_4{k, 1} = act_G_ind';
-        end
-    end
-end
+% all mcs for the reactions are stored in mcs array
+G_ind_4 = vertcat(mcs{:});
+G_ind_4 = cellfun(@transpose, G_ind_4, 'UniformOutput', false);
+G_ind_4 = cellfun(@strrep, G_ind_4, repmat({'DM_'}, length(G_ind_4), 1), repmat({''}, length(G_ind_4), 1), 'UniformOutput', false);
+G_ind_4 = cellfun(@strtok, G_ind_4, repmat({separate_isoform}, length(G_ind_4), 1), 'UniformOutput', false);
+G_ind_4 = cellfun(@sort, G_ind_4, 'UniformOutput', false);
+
+n_act_mcs = sum(cellfun(@numel, mcs));
+G_4 = spalloc(n_act_mcs, n_rxns, n_act_mcs);
+G_4(sub2ind(size(G_4),(1:length(G_ind_4))',repelem(pos_rxns_or_and,cellfun(@numel, mcs)))) = 1;
 G_time(4, 1) = toc(time_e);
+
 
 % Delete isoforms in order to work at the gene level
 time_f = tic;
-G_ind_1 = cellfun(@strtok, G_ind_1, repmat({separate_isoform}, length(G_ind_1), 1), 'UniformOutput', false);
-
-n_KO_2 = length(G_ind_2);
-for i = 1:n_KO_2
-    act_G_ind_2 = G_ind_2{i};
-    act_G_ind_2 = cellfun(@strtok, act_G_ind_2, repmat({separate_isoform}, 1, length(act_G_ind_2)), 'UniformOutput', false);
-    G_ind_2{i} = unique(act_G_ind_2);
+if ~isempty(separate_isoform)
+    G_ind_1 = cellfun(@strtok, G_ind_1, repmat({separate_isoform}, length(G_ind_1), 1), 'UniformOutput', false);
+    
+    n_KO_2 = length(G_ind_2);
+    for i = 1:n_KO_2
+        act_G_ind_2 = G_ind_2{i};
+        act_G_ind_2 = cellfun(@strtok, act_G_ind_2, repmat({separate_isoform}, 1, length(act_G_ind_2)), 'UniformOutput', false);
+        G_ind_2{i} = unique(act_G_ind_2);
+    end
+    G_ind_3 = cellfun(@strtok, G_ind_3, repmat({separate_isoform}, length(G_ind_3), 1), 'UniformOutput', false);
 end
-G_ind_3 = cellfun(@strtok, G_ind_3, repmat({separate_isoform}, length(G_ind_3), 1), 'UniformOutput', false);
 
 % Delete repeats
 if printLevel >=1
     disp('G MATRIX - Delete Repeats');
 end
-tmp_G = [];
-try tmp_G = [tmp_G; G_1]; end
-try tmp_G = [tmp_G; G_2]; end
-try tmp_G = [tmp_G; G_3]; end
-try tmp_G = [tmp_G; G_4]; end
-tmp_G_ind = [];
-try tmp_G_ind = [tmp_G_ind; G_ind_1]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_2]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_3]; end
-try tmp_G_ind = [tmp_G_ind; G_ind_4]; end
+tmp_G = spalloc(0,n_rxns,0);
+tmp_G = [tmp_G; G_1];
+tmp_G = [tmp_G; G_2];
+tmp_G = [tmp_G; G_3];
+tmp_G = [tmp_G; G_4];
+tmp_G_ind = cell(0,1);
+tmp_G_ind = [tmp_G_ind; G_ind_1];
+tmp_G_ind = [tmp_G_ind; G_ind_2];
+tmp_G_ind = [tmp_G_ind; G_ind_3];
+tmp_G_ind = [tmp_G_ind; G_ind_4];
 n_tmp_G_ind = length(tmp_G_ind);
 
-k = 0;
-clear G G_ind
-for i = 1:n_tmp_G_ind
-    if i == 1
-        k = k+1;
-        G(k, :) = tmp_G(i, :);
-        if ~iscell(tmp_G_ind{i})
-            G_ind{k, 1} = tmp_G_ind(i);
-        else
-            G_ind{k, 1} = sort(tmp_G_ind{i});
-        end
-    else
-        if ~iscell(tmp_G_ind{i})
-            act_G_ind = tmp_G_ind(i);
-        else
-            act_G_ind = sort(tmp_G_ind{i});
-        end
+% k = 0;
+clear G G_ind % no existen, lo comento
 
-        pos_equal = cellfun(@isequal, G_ind, repmat({act_G_ind}, length(G_ind), 1));
-        if sum(pos_equal) > 0
-            G(pos_equal, :) = G(pos_equal, :) + tmp_G(i, :);
-        else
-            k = k+1;
-            G(k, :) = tmp_G(i, :);
-            G_ind{k, 1} = act_G_ind;
-        end
+% aggregate duplicates
+for i = 1:n_tmp_G_ind
+    if ~iscell(tmp_G_ind{i})
+        tmp_G_ind{i,1} = sort(tmp_G_ind(i));
+    else
+        tmp_G_ind{i,1} = sort(tmp_G_ind{i});
     end
 end
+tmp_G_ind_txt = cellfun(@cell2mat, tmp_G_ind, 'UniformOutput', false);
+[tmp_G_ind_txt_unique, IDX_tmp_G_ind,IDX_G_ind] = unique(tmp_G_ind_txt, 'stable');
+
+G = spalloc(length(tmp_G_ind_txt_unique),n_rxns,nnz(tmp_G));
+for i = 1:length(IDX_G_ind)
+    G(IDX_G_ind(i),:) = G(IDX_G_ind(i),:) + tmp_G(i,:);
+end
+G_ind = tmp_G_ind(IDX_tmp_G_ind);
+
+clear tmp_G_ind_txt tmp_G_ind_txt_unique IDX_tmp_G_ind IDX_G_ind
 
 % Fill the G matrix with reactions which are knocked out by a given KO
 % without being a gMCS
@@ -278,51 +288,46 @@ n_genes_KO = cellfun(@length, G_ind);
 G_ind = G_ind(ind);
 G = G(ind, :);
 n_G_ind = length(G_ind);
-for i = 1:n_G_ind
-    act_G_ind = G_ind{i};
-    n_act_G_ind = length(act_G_ind);
-    pos = find(n_genes_KO > n_act_G_ind);
-    greater_G_ind = G_ind(pos);
-    n_greater_G_ind = length(pos);
-    for j = 1:n_greater_G_ind
-        if sum(ismember(G_ind{pos(j)}, act_G_ind)) == n_act_G_ind
-            G(pos(j), :) = G(pos(j), :) + G(i, :);
-        end
-    end
-end
-G = double(G>0);
 
 % Check the interconnections between KOs
 if printLevel >=1
     disp('G MATRIX - Check Relations');
 end
-k = 0;
-n_genes_KO = cellfun(@length, G_ind);
-for i = 2:n_G_ind
-    act_G_ind = G_ind(i);
-    n_act_G_ind = length(act_G_ind{:});
-    pos = find(n_genes_KO < n_act_G_ind);
-    if ~isempty(pos)
-        pos = pos(end);
-        for j = 1:pos
-            act_G_ind_2 = G_ind(j);
-            tmp = ismember(act_G_ind{:}, act_G_ind_2{:});
-            n_act_G_ind_2 = length(act_G_ind_2{:});
-            if sum(tmp) == n_act_G_ind_2
-                k = k+1;
-                related(k, 1) = i;
-                related(k, 2) = j;
-            end
-        end
+related = zeros(0,2);
+% generate matrix that relates genes and G_ind
+Gind2genes_genes = unique([G_ind{:}]);
+Gind2genes_mat = spalloc(length(G_ind),length(Gind2genes_genes), sum(cellfun(@length,G_ind)));
+for i = 1:length(G_ind)
+    Gind2genes_mat(i,ismember(Gind2genes_genes, G_ind{i})) = 1;
+end
+% use matrix to search G_inds that contains lower order G_inds
+for i = 1:n_G_ind
+    act_G_ind = G_ind{i};
+    n_act_G_ind = length(act_G_ind);
+    pos = find(n_genes_KO > n_act_G_ind);
+    % if a G_ind contains a smaller order one, all columns for these genes
+    % should be one
+    pos = pos(mean(Gind2genes_mat(pos,ismember(Gind2genes_genes,act_G_ind)),2)==1);
+    
+    for j = 1:length(pos)
+        % Increase the G matrix
+        G(pos(j), :) = G(pos(j), :) + G(i, :);
+        
+        % Add the relationships between G_inds
+        related(end+1,:) = [pos(j), i];
     end
 end
+G = double(G>0);
 
-if exist('related')
+
+if size(related)>0
+    %     if exist('related', 'var')
     un_related = unique(related(:, 1));
     n_un_related = length(un_related);
     for i = 1:n_un_related
         act_KO = un_related(i);
-        ind = find(related(:, 1) == act_KO);
+        %         ind = find(related(:, 1) == act_KO);
+        ind = related(:, 1) == act_KO;
         act_related = related(ind, 2);
         all_genes = [G_ind{act_related}];
         un_all_genes = unique(all_genes);
@@ -333,9 +338,16 @@ else
     related = NaN;
 end
 
+
+
+% Return to original size
+G = G(:,I2duplicated);
+
+% Save the results
 final_filename = [pwd filesep 'G_' model_name '.mat'];
 G_time(5, 1) = toc(time_f)+ini_time;
-save(final_filename, 'G', 'G_ind', 'related', 'n_genes_KO', 'G_time');
+G_rxns = model.rxns;
+save(final_filename, 'G', 'G_ind', 'G_rxns', 'related', 'n_genes_KO', 'G_time', 'separate_isoform');
 if printLevel >=1
     disp('The G Matrix has been successfully calculated');
 end
