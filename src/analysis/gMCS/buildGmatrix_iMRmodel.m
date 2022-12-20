@@ -113,42 +113,9 @@ else
                     end
 
                     %Check of the presence of cycles
-                    submodel = createModel(abr, names, reactions, 'printLevel', 0);
-                    
+                    submodel = createModel(abr, names, reactions, 'printLevel', 0);                   
                     submodel = addCOBRAConstraints(submodel, submodel.rxns, 1,...
                         'c',ones(1,numel(submodel.rxns)), 'dsense','G');
-                  
-%                     S = submodel.S;
-%                     [nrow, ncol] = size(S);
-% 
-%                     A = sparse(nrow+1, ncol);
-%                     A(1:nrow,:) = S;
-%                     A(nrow+1,:) = ones(1, ncol);
-% 
-%                     rhs = zeros(nrow+1,1);
-%                     lhs = zeros(nrow+1,1);
-%                     rhs(1:nrow,1) = 0;
-%                     lhs(1:nrow,1)= 0;
-%                     rhs(nrow+1,1) = inf;
-%                     lhs(nrow+1,1)= 1;
-% 
-%                     ub = zeros(ncol, 1);
-%                     lb = zeros(ncol, 1);
-% 
-%                     ub(1:ncol,1) = inf;
-%                     lb(1:ncol,1) = 0;
-%                     ctype = '';
-%                     ctype(1:ncol) = 'C';
-%                     obj = ones(1, ncol);
-%                     sense = 'minimize';
-%                     cplex = Cplex('Prueba');
-%                     Model = struct();
-%                     [Model.A, Model.rhs, Model.lhs, Model.ub, Model.lb, Model.obj, Model.ctype, Model.sense] = deal(A, rhs, lhs, ub, lb, obj, ctype, sense);
-%                     cplex.Model = Model;
-%                     cplex.DisplayFunc = [];
-% 
-%                     cplex.solve()
-%                     sol_1 = cplex.Solution;
                     
                     sol = optimizeCbModel(submodel, 'min');
                     if sol.stat ~= 0
