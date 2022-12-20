@@ -158,18 +158,27 @@ else
     [G, G_ind, related, n_genes_KO, G_time] = buildGmatrix(model_name, model_struct, separate_transcript, numWorkers, printLevel);
     assert(size(G,2) == numel(model_struct.rxns));
 end
+gmcs_time = cell(1,2);
 gmcs_time{1, 1} = '------ TIMING ------';
 gmcs_time{1, 2} = '--- G MATRIX ---';
-gmcs_time{2, 1} = 'G - Step 1';
-gmcs_time{3, 1} = 'G - Step 2';
-gmcs_time{4, 1} = 'G - Step 3';
-gmcs_time{5, 1} = 'G - Step 4';
-gmcs_time{6, 1} = 'G - Others';
-gmcs_time{7, 1} = 'TOTAL G MATRIX';
-gmcs_time(2:6, 2) = mat2cell(G_time, ones(5, 1), 1);
-gmcs_time{7, 2} = sum(G_time);
-gmcs_time{9, 1} = '------ TIMING ------';
-gmcs_time{9, 2} = '---- gMCSs ----';
+if numel(G_time)==5
+    gmcs_time{2, 1} = 'G - Step 1';
+    gmcs_time{3, 1} = 'G - Step 2';
+    gmcs_time{4, 1} = 'G - Step 3';
+    gmcs_time{5, 1} = 'G - Step 4';
+    gmcs_time{6, 1} = 'G - Others';
+    gmcs_time{7, 1} = 'TOTAL G MATRIX';
+    gmcs_time(2:6, 2) = mat2cell(G_time, ones(5, 1), 1);
+    gmcs_time{7, 2} = sum(G_time);
+else
+    gmcs_time{2, 1} = 'G - eGPR networks';
+    gmcs_time{3, 1} = 'G - Others';
+    gmcs_time{4, 1} = 'TOTAL G MATRIX';
+    gmcs_time(2:3, 2) = [G_time(2,2); G_time(4,2)];
+    gmcs_time{4, 2} = sum([G_time{2,2}; G_time{4,2}]);
+end
+gmcs_time{end+2, 1} = '------ TIMING ------';
+gmcs_time{end, 2} = '---- gMCSs ----';
 time_aa = tic;
 len_KO = cellfun(@length, G_ind);
 n_poss_KO = length(G_ind);

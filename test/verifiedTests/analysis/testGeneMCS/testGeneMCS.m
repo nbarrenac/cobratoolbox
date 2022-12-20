@@ -89,17 +89,14 @@ for k = 1:length(solverPkgs)
         %and, that there are no surplus solutions
         assert(all(cellfun(@(x) any(cellfun(@(y) isempty(setxor(x,y)),{{'g5'},{'g1','g4'}})), gmcs)))
         %Finally test this for gMCS containing a specific knockout.
-        options.KO = 'g5';
-        [gmcs, gmcs_time] = calculateGeneMCS('toy_example_gMCS', model, 20, 5, options);
+        [gmcs, gmcs_time] = calculateGeneMCS('toy_example_gMCS', model, 20, 5, 'KO', 'g5');
         assert(isequal(gmcs,{{'g5'}}));
         % Check the gMCS
         [IsCutSet, IsMinimal, geneNotMinimal] = checkGeneMCS(model, gmcs);
         assert(IsMinimal);
         assert(IsCutSet);
         %assert using one worker
-        options = struct();
-        options.numWorkers = 1;
-        assert(~verifyCobraFunctionError('calculateGeneMCS', 'inputs', {'toy_example_gMCS', model, 20, 5, options}));
+        assert(~verifyCobraFunctionError('calculateGeneMCS', 'inputs', {'toy_example_gMCS', model, 20, 5, 'numWorkers', 1}));
     else
         warning('The test testGeneMCS cannot run using the solver interface: %s. The solver interface is not installed or not configured properly.\n', solverPkgs{k});
     end
